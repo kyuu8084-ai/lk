@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>StudyWithMe - Thời Khóa Biểu (Luxury AI Edition)</title>
+    <!-- Fonts: Montserrat/Playfair (Default), Inter/Lora (Modern), Roboto/Merriweather (Classic) -->
+    <link href="https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Playfair+Display:wght@700;900&family=Inter:wght@400;600&family=Lora:ital,wght@0,600;1,400&family=Roboto:wght@400;500&family=Merriweather:wght@700;900&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+      tailwind.config = {
+        darkMode: 'class',
+        theme: {
+          extend: {
+            colors: {
+              // Using rgb(var(...) / <alpha>) syntax allows Tailwind opacity modifiers (e.g., bg-primary/50) to work with CSS variables
+              primary: 'rgb(var(--color-primary) / <alpha-value>)', 
+              secondary: 'rgb(var(--color-secondary) / <alpha-value>)', 
+              accent: 'rgb(var(--color-accent) / <alpha-value>)', 
+              dark: '#0f172a',
+              glass: 'rgba(255, 255, 255, 0.65)',
+              'glass-dark': 'rgba(15, 23, 42, 0.6)',
+            },
+            fontFamily: {
+              sans: ['var(--font-sans)', 'sans-serif'],
+              serif: ['var(--font-serif)', 'serif'],
+            },
+            boxShadow: {
+              'glass': '0 8px 32px 0 rgba(31, 38, 135, 0.37)',
+            },
+            animation: {
+              'float-up': 'floatUp 20s linear infinite',
+              'pulse-slow': 'pulse 3s infinite',
+              'bounce-gentle': 'bounce 2s infinite',
+            },
+            keyframes: {
+              floatUp: {
+                '0%': { transform: 'translateY(0) rotate(0deg)', opacity: '0' },
+                '10%': { opacity: '0.5' },
+                '100%': { transform: 'translateY(-120vh) rotate(360deg)', opacity: '0' },
+              }
+            }
+          }
+        }
+      }
+    </script>
+    <style>
+      :root {
+        /* Default Theme: Indigo/Purple/Pink */
+        --color-primary: 99 102 241;   /* #6366f1 */
+        --color-secondary: 168 85 247; /* #a855f7 */
+        --color-accent: 236 72 153;    /* #ec4899 */
+        
+        /* Default Fonts */
+        --font-sans: 'Montserrat';
+        --font-serif: 'Playfair Display';
+      }
+
+      body {
+        -webkit-font-smoothing: antialiased;
+        -webkit-tap-highlight-color: transparent;
+      }
+      .glass-panel {
+        background: rgba(255, 255, 255, 0.65);
+        backdrop-filter: blur(16px);
+        -webkit-backdrop-filter: blur(16px);
+        border: 1px solid rgba(255, 255, 255, 0.5);
+      }
+      .dark .glass-panel {
+        background: rgba(30, 41, 59, 0.7);
+        border: 1px solid rgba(255, 255, 255, 0.1);
+      }
+      /* Custom scrollbar */
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #cbd5e1;
+        border-radius: 4px;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #94a3b8;
+      }
+    </style>
+  <script type="importmap">
+{
+  "imports": {
+    "react/": "https://esm.sh/react@^19.2.3/",
+    "react": "https://esm.sh/react@^19.2.3",
+    "react-dom/": "https://esm.sh/react-dom@^19.2.3/",
+    "@google/genai": "https://esm.sh/@google/genai@^1.35.0"
+  }
+}
+</script>
+<link rel="stylesheet" href="/index.css">
+</head>
+  <body class="bg-gradient-to-br from-primary/10 via-secondary/10 to-accent/10 dark:from-slate-900 dark:via-slate-800 dark:to-slate-900 min-h-screen text-slate-800 dark:text-slate-100 transition-all duration-500">
+    <div id="root"></div>
+  <script type="module" src="/index.tsx"></script>
+</body>
+</html>

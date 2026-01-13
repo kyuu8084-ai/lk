@@ -1,0 +1,7 @@
+{
+  "name": "StudyWithMe - AI Schedule",
+  "description": "A luxury schedule management app with AI timetable recognition and persistent notifications.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
