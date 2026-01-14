@@ -176,14 +176,19 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
           // Resize to max dimension of 1024px to reduce size
           const MAX_WIDTH = 1024;
           const scaleSize = MAX_WIDTH / Math.max(img.width, MAX_WIDTH);
-          canvas.width = img.width * scaleSize;
-          canvas.height = img.height * scaleSize;
+          // Use Math.floor to ensure integer dimensions, preventing browser bugs
+          canvas.width = Math.floor(img.width * scaleSize);
+          canvas.height = Math.floor(img.height * scaleSize);
 
           const ctx = canvas.getContext('2d');
-          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+          if (ctx) {
+            ctx.fillStyle = '#FFFFFF';
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          }
           
-          // Compress to JPEG with 0.7 quality
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          // Compress to JPEG with 0.8 quality (better for text)
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
           resolve(dataUrl);
         };
         img.onerror = (err) => reject(err);
@@ -210,7 +215,7 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
           onUpdateSchedules([...user.schedules, ...parsedSchedules]);
           alert(`AI đã thêm thành công ${parsedSchedules.length} môn học!`);
         } else {
-          alert('AI không tìm thấy lịch học. Hãy thử crop ảnh chỉ lấy phần bảng thời khóa biểu.');
+          alert('AI không tìm thấy lịch học. Hãy thử chụp lại ảnh rõ nét hơn.');
         }
       } catch (err: any) {
         alert(`${err.message}`);
