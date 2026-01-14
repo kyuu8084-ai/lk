@@ -1,9 +1,12 @@
 import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { Schedule } from "../types";
 
+// API Key được cấu hình trực tiếp để chạy trên trình duyệt
+const API_KEY = "AIzaSyDN_oDmYkgNkTuDiko53xD3lZEQW10zGuc";
+
 const parseScheduleImage = async (base64Image: string, mimeType: string, userInstruction: string): Promise<Schedule[]> => {
-  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
-  const modelId = 'gemini-2.0-flash-exp';
+  const ai = new GoogleGenAI({ apiKey: API_KEY });
+  const modelId = 'gemini-3-flash-preview';
 
   // Prompt được tinh chỉnh đặc biệt cho loại bảng trong ảnh
   const prompt = `
