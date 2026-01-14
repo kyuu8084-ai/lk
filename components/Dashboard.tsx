@@ -163,39 +163,65 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
     }
   };
 
+  // Helper function to resize image before upload
+  const resizeImage = (file: File): Promise<string> => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.readAsDataURL(file);
+      reader.onload = (event) => {
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          // Resize to max dimension of 1024px to reduce size
+          const MAX_WIDTH = 1024;
+          const scaleSize = MAX_WIDTH / Math.max(img.width, MAX_WIDTH);
+          canvas.width = img.width * scaleSize;
+          canvas.height = img.height * scaleSize;
+
+          const ctx = canvas.getContext('2d');
+          ctx?.drawImage(img, 0, 0, canvas.width, canvas.height);
+          
+          // Compress to JPEG with 0.7 quality
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.7);
+          resolve(dataUrl);
+        };
+        img.onerror = (err) => reject(err);
+      };
+      reader.onerror = (err) => reject(err);
+    });
+  };
+
   const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    
     setIsLoadingAI(true);
     try {
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64String = reader.result as string;
-        // Extract correct MIME type (e.g., image/png or image/jpeg)
-        const mimeType = base64String.split(';')[0].split(':')[1];
-        const base64Data = base64String.split(',')[1];
+      // Compress image first
+      const base64String = await resizeImage(file);
+      const mimeType = 'image/jpeg'; // Always convert to jpeg
+      const base64Data = base64String.split(',')[1];
         
-        try {
-          // Pass MIME type to service
-          const parsedSchedules = await geminiService.parseScheduleImage(base64Data, mimeType, aiInstruction);
-          if (parsedSchedules.length > 0) {
-            onUpdateSchedules([...user.schedules, ...parsedSchedules]);
-            alert(`AI đã thêm thành công ${parsedSchedules.length} môn học!`);
-          } else {
-            alert('AI không tìm thấy lịch học. Hãy thử mô tả kỹ hơn hoặc crop ảnh chỉ lấy phần bảng.');
-          }
-        } catch (err: any) {
-          alert(`Lỗi: ${err.message}`);
-        } finally {
-          setIsLoadingAI(false);
-          if (fileInputRef.current) fileInputRef.current.value = '';
+      try {
+        // Pass MIME type to service
+        const parsedSchedules = await geminiService.parseScheduleImage(base64Data, mimeType, aiInstruction);
+        if (parsedSchedules.length > 0) {
+          onUpdateSchedules([...user.schedules, ...parsedSchedules]);
+          alert(`AI đã thêm thành công ${parsedSchedules.length} môn học!`);
+        } else {
+          alert('AI không tìm thấy lịch học. Hãy thử crop ảnh chỉ lấy phần bảng thời khóa biểu.');
         }
-      };
-      reader.readAsDataURL(file);
+      } catch (err: any) {
+        alert(`${err.message}`);
+      } finally {
+        setIsLoadingAI(false);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+      }
     } catch (error) {
       console.error(error);
       setIsLoadingAI(false);
-      alert("Lỗi khi đọc file ảnh.");
+      alert("Lỗi khi xử lý ảnh. Vui lòng chọn ảnh khác.");
     }
   };
 
