@@ -4,8 +4,12 @@ import { Schedule } from "../types";
 // API Key được cấu hình trực tiếp theo yêu cầu
 const API_KEY = "AIzaSyDN_oDmYkgNkTuDiko53xD3lZEQW10zGuc";
 
-const parseScheduleImage = async (base64Image: string, userInstruction: string): Promise<Schedule[]> => {
+const parseScheduleImage = async (base64Image: string, mimeType: string, userInstruction: string): Promise<Schedule[]> => {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
+
+  // Use gemini-2.0-flash-exp for better visual recognition capabilities
+  // or fall back to 1.5-flash if that doesn't work, but here we try 2.0-flash-exp
+  const modelId = 'gemini-2.0-flash-exp';
 
   const prompt = `
     Analyze this image which is a school timetable (thời khóa biểu).
@@ -30,12 +34,12 @@ const parseScheduleImage = async (base64Image: string, userInstruction: string):
 
   try {
     const response = await ai.models.generateContent({
-      model: 'gemini-2.5-flash',
+      model: modelId,
       contents: {
         parts: [
           {
             inlineData: {
-              mimeType: 'image/jpeg', 
+              mimeType: mimeType || 'image/jpeg', // Use the detected mime type
               data: base64Image
             }
           },
@@ -70,9 +74,13 @@ const parseScheduleImage = async (base64Image: string, userInstruction: string):
     }
     return [];
 
-  } catch (error) {
+  } catch (error: any) {
     console.error("AI Error:", error);
-    throw new Error("Không thể nhận dạng ảnh. Vui lòng thử lại với ảnh rõ nét hơn.");
+    // Provide a more descriptive error message to the user
+    let msg = "Không thể nhận dạng ảnh. Vui lòng thử lại với ảnh rõ nét hơn.";
+    if (error.message?.includes('400')) msg = "Lỗi dữ liệu ảnh (400). Hãy đảm bảo ảnh là định dạng JPG hoặc PNG.";
+    if (error.message?.includes('429')) msg = "Hệ thống đang quá tải, vui lòng thử lại sau 1 phút.";
+    throw new Error(msg);
   }
 };
 

@@ -171,17 +171,21 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
       const reader = new FileReader();
       reader.onloadend = async () => {
         const base64String = reader.result as string;
+        // Extract correct MIME type (e.g., image/png or image/jpeg)
+        const mimeType = base64String.split(';')[0].split(':')[1];
         const base64Data = base64String.split(',')[1];
+        
         try {
-          const parsedSchedules = await geminiService.parseScheduleImage(base64Data, aiInstruction);
+          // Pass MIME type to service
+          const parsedSchedules = await geminiService.parseScheduleImage(base64Data, mimeType, aiInstruction);
           if (parsedSchedules.length > 0) {
             onUpdateSchedules([...user.schedules, ...parsedSchedules]);
             alert(`AI đã thêm thành công ${parsedSchedules.length} môn học!`);
           } else {
-            alert('AI không tìm thấy lịch học. Hãy thử mô tả kỹ hơn.');
+            alert('AI không tìm thấy lịch học. Hãy thử mô tả kỹ hơn hoặc crop ảnh chỉ lấy phần bảng.');
           }
         } catch (err: any) {
-          alert(err.message);
+          alert(`Lỗi: ${err.message}`);
         } finally {
           setIsLoadingAI(false);
           if (fileInputRef.current) fileInputRef.current.value = '';
@@ -191,6 +195,7 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
     } catch (error) {
       console.error(error);
       setIsLoadingAI(false);
+      alert("Lỗi khi đọc file ảnh.");
     }
   };
 
