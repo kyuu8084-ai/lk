@@ -8,8 +8,10 @@ const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 const parseScheduleImage = async (base64Image: string, mimeType: string, userInstruction: string): Promise<Schedule[]> => {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
-  // Sử dụng model stable nhất
-  const modelId = 'gemini-1.5-flash';
+  
+  // Sử dụng Model Gemini 2.0 Flash Experimental (Mới nhất, hỗ trợ Vision tốt)
+  // Fix lỗi 404 do model cũ không còn hỗ trợ hoặc sai phiên bản
+  const modelId = 'gemini-2.0-flash-exp';
 
   const prompt = `
     Analyze this school timetable image and extract class sessions into a strictly valid JSON array.
@@ -28,7 +30,7 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
     5. Ignore empty slots.
   `;
 
-  // Use string values for safety settings to avoid Enum version conflicts
+  // Sử dụng chuỗi thay vì Enum để tránh lỗi tương thích phiên bản
   const safetySettings = [
     { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
     { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
@@ -76,14 +78,14 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
         let cleanText = response.text.trim();
         
         // --- IMPROVED JSON EXTRACTION ---
-        // Find the first '[' and the last ']' to ignore any preamble or postscript text
+        // Tìm đoạn JSON hợp lệ giữa dấu [...]
         const firstOpen = cleanText.indexOf('[');
         const lastClose = cleanText.lastIndexOf(']');
         
         if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
             cleanText = cleanText.substring(firstOpen, lastClose + 1);
         } else {
-            // Fallback cleaning if brackets are messy
+            // Fallback: Xóa markdown code block
             cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '');
         }
 
@@ -95,7 +97,7 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
             }));
         } catch (parseError) {
             console.error("JSON Parse Error. Raw text:", response.text);
-            throw new Error("AI trả về dữ liệu lỗi định dạng.");
+            throw new Error("AI trả về dữ liệu không đúng định dạng JSON.");
         }
       }
       return [];
@@ -104,18 +106,27 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
       console.error(`Attempt ${attempts + 1} failed:`, error);
       attempts++;
       
-      // Retry on network/overload errors
+      // Retry nếu lỗi mạng hoặc quá tải (503, 429)
       if (error.message?.includes('503') || error.message?.includes('429')) {
         await delay(2000 * attempts); 
         continue;
       }
 
-      // Final attempt failure
+      // Nếu hết lượt thử
       if (attempts === 3) {
-         let msg = "Không thể nhận dạng ảnh. " + (error.message || "");
-         if (error.message?.includes('400')) msg = "Lỗi ảnh (400). Hãy thử ảnh khác hoặc chụp rõ hơn.";
-         if (error.message?.includes('SAFETY')) msg = "Ảnh bị chặn bởi bộ lọc an toàn.";
-         if (error.message?.includes('API_KEY')) msg = "API Key không hợp lệ hoặc hết hạn.";
+         let msg = "Không thể nhận dạng ảnh.";
+         
+         // Xử lý thông báo lỗi thân thiện hơn
+         if (error.message?.includes('404') || error.message?.includes('NOT_FOUND')) {
+             msg = "Model AI hiện tại đang bảo trì hoặc chưa khả dụng. Vui lòng thử lại sau.";
+         } else if (error.message?.includes('400')) {
+             msg = "Ảnh không hợp lệ. Vui lòng chụp rõ nét hơn.";
+         } else if (error.message?.includes('SAFETY')) {
+             msg = "Ảnh bị chặn bởi bộ lọc an toàn.";
+         } else if (error.message?.includes('API_KEY')) {
+             msg = "Lỗi kết nối API Key.";
+         }
+         
          throw new Error(msg);
       }
     }
