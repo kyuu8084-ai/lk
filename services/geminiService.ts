@@ -7,40 +7,42 @@ const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 const parseScheduleImage = async (base64Image: string, mimeType: string, userInstruction: string): Promise<Schedule[]> => {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
+  // Sử dụng gemini-2.0-flash-exp vì khả năng nhìn (Vision) tốt nhất hiện nay cho bảng biểu phức tạp
   const modelId = 'gemini-2.0-flash-exp';
 
-  // Prompt chuyên dụng cho thời khóa biểu dạng lưới (Matrix) Việt Nam
   const prompt = `
-    You are a data entry engine. Your job is to extract school schedule from an image of a Grid/Matrix Timetable.
+    You are an intelligent assistant extracting data from a Vietnamese School Timetable (Thời Khóa Biểu).
+    
+    --- 1. ANALYZE USER REQUEST ---
+    User Instruction: "${userInstruction}"
+    
+    * Task: Interpret the User Instruction to find the TARGET COLUMN HEADER.
+    * Example: If user says "lấy lịch lớp 12a1" or "xem 12A1", the Target Header is "12A1" (or similar like "12 A1", "Lớp 12A1").
+    * If User Instruction is empty, default to the FIRST column containing subject data.
+    
+    --- 2. ANALYZE IMAGE STRUCTURE ---
+    * Look for the Header Row containing Class Names (e.g., 12E1, 12E2, 12A1...).
+    * Locate the column that matches the Target Header found in Step 1.
+    * Locate the "Thứ" (Day) and "Tiết" (Period) / "TG" (Time) columns on the far left.
+    * NOTE: The "Thứ" column uses MERGED CELLS. If a row has no "Thứ", use the value from the row above it.
 
-    --- USER INSTRUCTION ---
-    Target Class/Column: "${userInstruction ? userInstruction : "AUTO DETECT (Find the most populated column)"}"
-    
-    --- IMAGE STRUCTURE ---
-    1. The Left-most columns are usually: "Thứ" (Day), "Buổi" (Session), "Tiết" (Period), "TG" (Time).
-    2. The Header Row contains Class Names (e.g., 12E1, 12E2, 12A1...).
-    3. The "Thứ" (Day) column uses MERGED CELLS. It implies the day applies to all rows until the text changes (e.g., "2" covers all rows until "3").
-    
-    --- ALGORITHM TO EXECUTE ---
-    1. Identify the specific column index for the Target Class requested by User (e.g., "12A1"). If user didn't specify, use the first column with data.
-    2. Scan that specific column row by row.
-    3. IF a cell in that column contains a Subject (text is not empty):
-       a. LOOK LEFT all the way to the first column to find the "Thứ" (Day). Handle merged cells (carry over previous value).
-       b. LOOK LEFT to find "TG" or "Tiết".
-       c. Extract Subject, Day, StartTime, EndTime.
-    
-    --- DATA CLEANING RULES ---
-    1. Time Format: Convert "7g10" -> "07:10", "12g30" -> "12:30". 
-    2. If only "Tiết" is available:
-       - Morning (Sáng): T1=07:00, T2=07:50, T3=08:45, T4=09:35, T5=10:25.
-       - Afternoon (Chiều): T1=12:45, T2=13:35, T3=14:30, T4=15:20, T5=16:10.
-    3. Day Format: Return "Thứ 2", "Thứ 3", ..., "Chủ nhật".
+    --- 3. EXTRACT DATA ---
+    Scan the TARGET COLUMN row by row:
+    * If the cell has text (Subject Name):
+      1. Map it to the corresponding "Thứ" (Day) on the left.
+      2. Map it to the "Tiết" (Period) or "TG" (Time).
+      3. Extract Subject Name.
 
-    --- OUTPUT ---
-    Return ONLY a valid JSON Array. Do not explain.
+    --- 4. DATA CLEANING & FORMATTING ---
+    * Time: Convert "7g10" to "07:10". If only Period (Tiết) is shown:
+      - Morning: 1(07:00-07:45), 2(07:50-08:35), 3(08:45-09:30), 4(09:40-10:25), 5(10:30-11:15).
+      - Afternoon: 1(12:45-13:30), 2(13:35-14:20), 3(14:25-15:10), 4(15:20-16:05), 5(16:10-16:55).
+    * Day: Format as "Thứ 2", "Thứ 3", etc.
+
+    --- 5. OUTPUT ---
+    Return STRICTLY a JSON Array. No markdown, no explanations.
     [
-      { "subject": "Toán", "day": "Thứ 2", "startTime": "07:10", "endTime": "07:55" },
-      { "subject": "Lý", "day": "Thứ 2", "startTime": "08:00", "endTime": "08:45" }
+      { "subject": "Toán", "day": "Thứ 2", "startTime": "07:10", "endTime": "07:55" }
     ]
   `;
 
@@ -64,26 +66,22 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
         },
         config: {
           safetySettings: safetySettings as any, 
-          temperature: 0.1, // Cực kỳ quan trọng để AI không "sáng tạo" lung tung
+          temperature: 0.2, // Tăng nhẹ temperature để AI "hiểu" ngôn ngữ tự nhiên linh hoạt hơn
           responseMimeType: "application/json",
         }
       });
 
       if (response.text) {
         let cleanText = response.text.trim();
-        
-        // Dùng Regex để bắt chính xác mảng JSON, bỏ qua mọi lời dẫn
         const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-            cleanText = jsonMatch[0];
-        } else {
-             cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '');
-        }
+        if (jsonMatch) cleanText = jsonMatch[0];
+        else cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '');
 
         try {
             const parsed = JSON.parse(cleanText);
             
             if (!Array.isArray(parsed) || parsed.length === 0) {
+               console.warn("AI trả về mảng rỗng:", response.text);
                if (attempts < 2) throw new Error("Empty Array");
             }
 
@@ -96,7 +94,7 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
             }));
         } catch (parseError) {
             console.error("JSON Error:", response.text);
-            throw new Error("Lỗi đọc dữ liệu.");
+            throw new Error("Lỗi cấu trúc dữ liệu AI.");
         }
       }
       return [];
@@ -111,8 +109,8 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
       }
 
       if (attempts === 3) {
-         let msg = "Không thể nhận dạng.";
-         if (error.message?.includes('404')) msg = "Lỗi kết nối AI.";
+         let msg = "Không thể đọc lịch từ ảnh này.";
+         if (error.message?.includes('404')) msg = "Dịch vụ AI đang gián đoạn.";
          throw new Error(msg);
       }
     }
