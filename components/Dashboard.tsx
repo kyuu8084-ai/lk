@@ -163,37 +163,13 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
     }
   };
 
-  // Helper function to resize image before upload
-  const resizeImage = (file: File): Promise<string> => {
+  // NEW: Convert file to Base64 directly without resizing to keep max quality
+  const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
       reader.readAsDataURL(file);
-      reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          // Resize to max dimension of 1024px to reduce size
-          const MAX_WIDTH = 1024;
-          const scaleSize = MAX_WIDTH / Math.max(img.width, MAX_WIDTH);
-          // Use Math.floor to ensure integer dimensions, preventing browser bugs
-          canvas.width = Math.floor(img.width * scaleSize);
-          canvas.height = Math.floor(img.height * scaleSize);
-
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.fillStyle = '#FFFFFF';
-            ctx.fillRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-          }
-          
-          // Compress to JPEG with 0.8 quality (better for text)
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.8);
-          resolve(dataUrl);
-        };
-        img.onerror = (err) => reject(err);
-      };
-      reader.onerror = (err) => reject(err);
+      reader.onload = () => resolve(reader.result as string);
+      reader.onerror = (error) => reject(error);
     });
   };
 
@@ -203,19 +179,18 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
     
     setIsLoadingAI(true);
     try {
-      // Compress image first
-      const base64String = await resizeImage(file);
-      const mimeType = 'image/jpeg'; // Always convert to jpeg
+      // Use original quality image
+      const base64String = await fileToBase64(file);
+      const mimeType = file.type || 'image/jpeg';
       const base64Data = base64String.split(',')[1];
         
       try {
-        // Pass MIME type to service
         const parsedSchedules = await geminiService.parseScheduleImage(base64Data, mimeType, aiInstruction);
         if (parsedSchedules.length > 0) {
           onUpdateSchedules([...user.schedules, ...parsedSchedules]);
           alert(`AI đã thêm thành công ${parsedSchedules.length} môn học!`);
         } else {
-          alert('AI không tìm thấy lịch học. Hãy thử chụp lại ảnh rõ nét hơn.');
+          alert('AI không tìm thấy lịch học. Hãy thử chụp lại ảnh rõ nét hơn hoặc nhập gợi ý lớp (VD: Lớp 12A1).');
         }
       } catch (err: any) {
         alert(`${err.message}`);
@@ -381,14 +356,14 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
               {activeTab === 'image' && (
                 <div className="space-y-4 animate-fadeIn">
                   <div>
-                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Yêu cầu cho AI</label>
-                    <textarea rows={2} value={aiInstruction} onChange={e => setAiInstruction(e.target.value)} className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary/50 outline-none text-sm dark:text-white" placeholder="VD: Lấy lịch lớp 12A..." />
+                    <label className="text-xs font-bold text-slate-500 uppercase ml-1">Yêu cầu cho AI (Tùy chọn)</label>
+                    <textarea rows={2} value={aiInstruction} onChange={e => setAiInstruction(e.target.value)} className="w-full p-3 rounded-xl bg-slate-50 dark:bg-slate-900/50 border border-slate-200 dark:border-slate-700 focus:ring-2 focus:ring-primary/50 outline-none text-sm dark:text-white" placeholder="VD: Lấy lịch cột 12A1, bỏ qua các lớp khác..." />
                   </div>
                   <div className={`border-2 border-dashed rounded-2xl p-6 transition-all cursor-pointer flex flex-col items-center justify-center text-center group ${isLoadingAI ? 'bg-slate-100 border-slate-300' : 'border-primary/30 hover:bg-primary/5 hover:border-primary'}`} onClick={() => !isLoadingAI && fileInputRef.current?.click()}>
                     {isLoadingAI ? (
-                      <div className="text-primary animate-pulse"><i className="fas fa-spinner fa-spin text-3xl mb-2"></i><p>Đang phân tích...</p></div>
+                      <div className="text-primary animate-pulse"><i className="fas fa-spinner fa-spin text-3xl mb-2"></i><p>Đang phân tích ảnh gốc...</p></div>
                     ) : (
-                      <div className="text-slate-400 group-hover:text-primary transition-colors"><i className="fas fa-cloud-upload-alt text-4xl mb-2"></i><p className="font-bold">Tải ảnh lên</p><p className="text-xs">JPG, PNG</p></div>
+                      <div className="text-slate-400 group-hover:text-primary transition-colors"><i className="fas fa-cloud-upload-alt text-4xl mb-2"></i><p className="font-bold">Tải ảnh lên</p><p className="text-xs">Chụp rõ nét để AI đọc chính xác</p></div>
                     )}
                     <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleImageUpload} disabled={isLoadingAI} />
                   </div>
