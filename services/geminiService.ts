@@ -7,42 +7,41 @@ const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 const parseScheduleImage = async (base64Image: string, mimeType: string, userInstruction: string): Promise<Schedule[]> => {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
-  // Sử dụng gemini-2.0-flash-exp vì khả năng nhìn (Vision) tốt nhất hiện nay cho bảng biểu phức tạp
+  // Sử dụng gemini-2.0-flash-exp vì khả năng nhìn (Vision) tốt nhất cho bảng biểu
   const modelId = 'gemini-2.0-flash-exp';
 
   const prompt = `
-    You are an intelligent assistant extracting data from a Vietnamese School Timetable (Thời Khóa Biểu).
-    
-    --- 1. ANALYZE USER REQUEST ---
-    User Instruction: "${userInstruction}"
-    
-    * Task: Interpret the User Instruction to find the TARGET COLUMN HEADER.
-    * Example: If user says "lấy lịch lớp 12a1" or "xem 12A1", the Target Header is "12A1" (or similar like "12 A1", "Lớp 12A1").
-    * If User Instruction is empty, default to the FIRST column containing subject data.
-    
-    --- 2. ANALYZE IMAGE STRUCTURE ---
-    * Look for the Header Row containing Class Names (e.g., 12E1, 12E2, 12A1...).
-    * Locate the column that matches the Target Header found in Step 1.
-    * Locate the "Thứ" (Day) and "Tiết" (Period) / "TG" (Time) columns on the far left.
-    * NOTE: The "Thứ" column uses MERGED CELLS. If a row has no "Thứ", use the value from the row above it.
+    You are an expert OCR engine for Vietnamese School Timetables (Thời Khóa Biểu). 
+    Your task is to extract schedule data from a GRID/MATRIX image.
 
-    --- 3. EXTRACT DATA ---
-    Scan the TARGET COLUMN row by row:
-    * If the cell has text (Subject Name):
-      1. Map it to the corresponding "Thứ" (Day) on the left.
-      2. Map it to the "Tiết" (Period) or "TG" (Time).
-      3. Extract Subject Name.
+    --- STEP 1: LOCATE THE TARGET COLUMN ---
+    User Instruction: "${userInstruction ? userInstruction : "AUTO-DETECT"}"
+    
+    1. Search the HEADER ROW for a column name that matches the User Instruction (e.g., if user says "12a1", look for "12A1", "Lớp 12A1", "12 A1").
+    2. If User Instruction is empty or not found, identify the MAIN column containing subject names.
+    3. Focus ONLY on this column. Ignore other class columns (like 12A2, 12A3...).
 
-    --- 4. DATA CLEANING & FORMATTING ---
-    * Time: Convert "7g10" to "07:10". If only Period (Tiết) is shown:
-      - Morning: 1(07:00-07:45), 2(07:50-08:35), 3(08:45-09:30), 4(09:40-10:25), 5(10:30-11:15).
-      - Afternoon: 1(12:45-13:30), 2(13:35-14:20), 3(14:25-15:10), 4(15:20-16:05), 5(16:10-16:55).
-    * Day: Format as "Thứ 2", "Thứ 3", etc.
+    --- STEP 2: SCAN & MAP (CRITICAL) ---
+    Iterate through every row of the Target Column:
+    1. If the cell contains a Subject (e.g., "Toán", "Văn", "CC", "SHCN"):
+       - LOOK FAR LEFT to the first column ("Thứ").
+       - LOOK FAR LEFT to the second/third column ("Tiết", "TG").
+    
+    --- STEP 3: HANDLE MERGED CELLS ---
+    - The "Thứ" (Day) column often has MERGED CELLS (one big cell spanning multiple rows). 
+    - RULE: If a row has no text in the "Thứ" column, use the value from the row above it. (e.g., Row 1 is "Thứ 2", Row 2 is empty -> It is still "Thứ 2").
 
-    --- 5. OUTPUT ---
-    Return STRICTLY a JSON Array. No markdown, no explanations.
+    --- STEP 4: TIME CONVERSION ---
+    - Convert "7g00" -> "07:00".
+    - If only "Tiết" (Period) is visible:
+      Sáng (Morning): 1=07:00, 2=07:50, 3=08:45, 4=09:35, 5=10:25.
+      Chiều (Afternoon): 1=12:45, 2=13:35, 3=14:30, 4=15:20, 5=16:10.
+
+    --- STEP 5: OUTPUT ---
+    Return STRICTLY a JSON Array. NO Markdown blocks.
     [
-      { "subject": "Toán", "day": "Thứ 2", "startTime": "07:10", "endTime": "07:55" }
+      { "subject": "Toán", "day": "Thứ 2", "startTime": "07:00", "endTime": "07:45" },
+      { "subject": "Văn", "day": "Thứ 3", "startTime": "08:45", "endTime": "09:30" }
     ]
   `;
 
@@ -66,13 +65,14 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
         },
         config: {
           safetySettings: safetySettings as any, 
-          temperature: 0.2, // Tăng nhẹ temperature để AI "hiểu" ngôn ngữ tự nhiên linh hoạt hơn
+          temperature: 0.1, // Low temperature for precision
           responseMimeType: "application/json",
         }
       });
 
       if (response.text) {
         let cleanText = response.text.trim();
+        // Force extract JSON array if wrapped in text
         const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
         if (jsonMatch) cleanText = jsonMatch[0];
         else cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '');
@@ -81,8 +81,8 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
             const parsed = JSON.parse(cleanText);
             
             if (!Array.isArray(parsed) || parsed.length === 0) {
-               console.warn("AI trả về mảng rỗng:", response.text);
-               if (attempts < 2) throw new Error("Empty Array");
+               console.warn("AI returned empty array.", response.text);
+               if (attempts < 2) throw new Error("Empty Result");
             }
 
             return parsed.map((item: any) => ({
@@ -93,14 +93,14 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
               endTime: item.endTime || "07:45"
             }));
         } catch (parseError) {
-            console.error("JSON Error:", response.text);
-            throw new Error("Lỗi cấu trúc dữ liệu AI.");
+            console.error("JSON Parse Error:", response.text);
+            throw new Error("Lỗi đọc dữ liệu từ AI.");
         }
       }
       return [];
 
     } catch (error: any) {
-      console.error(`Retry ${attempts + 1}...`, error);
+      console.error(`Attempt ${attempts + 1} failed:`, error);
       attempts++;
       
       if (error.message?.includes('503') || error.message?.includes('429')) {
@@ -109,8 +109,9 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
       }
 
       if (attempts === 3) {
-         let msg = "Không thể đọc lịch từ ảnh này.";
-         if (error.message?.includes('404')) msg = "Dịch vụ AI đang gián đoạn.";
+         // Thông báo lỗi thân thiện hơn
+         let msg = "Không thể đọc được lịch.";
+         if (error.message?.includes('Empty Result')) msg = "AI không tìm thấy môn học nào trong cột bạn yêu cầu.";
          throw new Error(msg);
       }
     }
