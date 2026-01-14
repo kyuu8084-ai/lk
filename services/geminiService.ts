@@ -1,4 +1,4 @@
-import { GoogleGenAI, Type, HarmCategory, HarmBlockThreshold } from "@google/genai";
+import { GoogleGenAI, Type } from "@google/genai";
 import { Schedule } from "../types";
 
 const API_KEY = "AIzaSyDN_oDmYkgNkTuDiko53xD3lZEQW10zGuc";
@@ -8,6 +8,7 @@ const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
 
 const parseScheduleImage = async (base64Image: string, mimeType: string, userInstruction: string): Promise<Schedule[]> => {
   const ai = new GoogleGenAI({ apiKey: API_KEY });
+  // Sử dụng model stable nhất
   const modelId = 'gemini-1.5-flash';
 
   const prompt = `
@@ -27,12 +28,12 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
     5. Ignore empty slots.
   `;
 
-  // Explicitly disable safety filters because timetables often contain names/places that trigger false positives
+  // Use string values for safety settings to avoid Enum version conflicts
   const safetySettings = [
-    { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
-    { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+    { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_NONE' },
+    { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_NONE' },
   ];
 
   let attempts = 0;
@@ -52,7 +53,7 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
           ]
         },
         config: {
-          safetySettings: safetySettings, 
+          safetySettings: safetySettings as any, 
           temperature: 0.1,
           responseMimeType: "application/json",
           responseSchema: {
@@ -74,24 +75,28 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
       if (response.text) {
         let cleanText = response.text.trim();
         
-        // Robust regex to find the JSON array even if the model adds text around it
-        const jsonMatch = cleanText.match(/\[[\s\S]*\]/);
-        if (jsonMatch) {
-            cleanText = jsonMatch[0];
-        } else {
-            // Fallback cleaning if regex fails but it looks like JSON
-            if (cleanText.startsWith('```json')) {
-                cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '');
-            } else if (cleanText.startsWith('```')) {
-                cleanText = cleanText.replace(/```/g, '');
-            }
-        }
+        // --- IMPROVED JSON EXTRACTION ---
+        // Find the first '[' and the last ']' to ignore any preamble or postscript text
+        const firstOpen = cleanText.indexOf('[');
+        const lastClose = cleanText.lastIndexOf(']');
         
-        const parsed = JSON.parse(cleanText);
-        return parsed.map((item: any) => ({
-          ...item,
-          id: Date.now().toString() + Math.random().toString(36).substr(2, 9)
-        }));
+        if (firstOpen !== -1 && lastClose !== -1 && lastClose > firstOpen) {
+            cleanText = cleanText.substring(firstOpen, lastClose + 1);
+        } else {
+            // Fallback cleaning if brackets are messy
+            cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '');
+        }
+
+        try {
+            const parsed = JSON.parse(cleanText);
+            return parsed.map((item: any) => ({
+              ...item,
+              id: Date.now().toString() + Math.random().toString(36).substr(2, 9)
+            }));
+        } catch (parseError) {
+            console.error("JSON Parse Error. Raw text:", response.text);
+            throw new Error("AI trả về dữ liệu lỗi định dạng.");
+        }
       }
       return [];
 
@@ -99,15 +104,18 @@ const parseScheduleImage = async (base64Image: string, mimeType: string, userIns
       console.error(`Attempt ${attempts + 1} failed:`, error);
       attempts++;
       
+      // Retry on network/overload errors
       if (error.message?.includes('503') || error.message?.includes('429')) {
         await delay(2000 * attempts); 
         continue;
       }
 
+      // Final attempt failure
       if (attempts === 3) {
-         let msg = "Không thể nhận dạng ảnh. Vui lòng thử lại.";
-         if (error.message?.includes('400')) msg = "Lỗi ảnh (400). Vui lòng thử lại với ảnh khác hoặc chụp rõ hơn.";
-         if (error.message?.includes('SAFETY')) msg = "Ảnh bị chặn bởi bộ lọc an toàn. Vui lòng thử lại.";
+         let msg = "Không thể nhận dạng ảnh. " + (error.message || "");
+         if (error.message?.includes('400')) msg = "Lỗi ảnh (400). Hãy thử ảnh khác hoặc chụp rõ hơn.";
+         if (error.message?.includes('SAFETY')) msg = "Ảnh bị chặn bởi bộ lọc an toàn.";
+         if (error.message?.includes('API_KEY')) msg = "API Key không hợp lệ hoặc hết hạn.";
          throw new Error(msg);
       }
     }
