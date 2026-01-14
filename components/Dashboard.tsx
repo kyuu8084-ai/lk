@@ -21,7 +21,7 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
   const [isLoadingAI, setIsLoadingAI] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
   const [alarmSound, setAlarmSound] = useState<AlarmSoundType>('standard');
-  const [showSettings, setShowSettings] = useState(false); // Combined settings modal
+  const [showSettings, setShowSettings] = useState(false); 
   const [settingsTab, setSettingsTab] = useState<'audio' | 'theme'>('theme');
   
   // Theme State
@@ -81,30 +81,30 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
         break;
     }
 
-    // Apply Colors (RGB format for Tailwind opacity support)
+    // Apply Colors
     switch (themeConfig.color) {
-      case 'nature': // Emerald/Teal/Lime
-        root.style.setProperty('--color-primary', '16 185 129'); // Emerald-500
-        root.style.setProperty('--color-secondary', '20 184 166'); // Teal-500
-        root.style.setProperty('--color-accent', '132 204 22');   // Lime-500
+      case 'nature': 
+        root.style.setProperty('--color-primary', '16 185 129'); 
+        root.style.setProperty('--color-secondary', '20 184 166'); 
+        root.style.setProperty('--color-accent', '132 204 22');   
         break;
-      case 'sunset': // Orange/Red/Yellow
-        root.style.setProperty('--color-primary', '249 115 22');  // Orange-500
-        root.style.setProperty('--color-secondary', '239 68 68'); // Red-500
-        root.style.setProperty('--color-accent', '234 179 8');    // Yellow-500
+      case 'sunset': 
+        root.style.setProperty('--color-primary', '249 115 22');  
+        root.style.setProperty('--color-secondary', '239 68 68'); 
+        root.style.setProperty('--color-accent', '234 179 8');    
         break;
-      case 'ocean': // Blue/Cyan/Sky
-        root.style.setProperty('--color-primary', '59 130 246');  // Blue-500
-        root.style.setProperty('--color-secondary', '6 182 212'); // Cyan-500
-        root.style.setProperty('--color-accent', '14 165 233');   // Sky-500
+      case 'ocean': 
+        root.style.setProperty('--color-primary', '59 130 246');  
+        root.style.setProperty('--color-secondary', '6 182 212'); 
+        root.style.setProperty('--color-accent', '14 165 233');   
         break;
-      case 'monochrome': // Slate/Gray
-        root.style.setProperty('--color-primary', '71 85 105');   // Slate-600
-        root.style.setProperty('--color-secondary', '100 116 139'); // Slate-500
-        root.style.setProperty('--color-accent', '30 41 59');     // Slate-800
+      case 'monochrome': 
+        root.style.setProperty('--color-primary', '71 85 105');   
+        root.style.setProperty('--color-secondary', '100 116 139'); 
+        root.style.setProperty('--color-accent', '30 41 59');     
         break;
       case 'default':
-      default: // Indigo/Purple/Pink
+      default: 
         root.style.setProperty('--color-primary', '99 102 241');
         root.style.setProperty('--color-secondary', '168 85 247');
         root.style.setProperty('--color-accent', '236 72 153');
@@ -127,7 +127,7 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
   const handleSoundChange = (type: AlarmSoundType) => {
     setAlarmSound(type);
     localStorage.setItem('studyWithMeAlarmSound', type);
-    audioService.playAlarm(type); // Preview
+    audioService.playAlarm(type); 
   };
 
   const handleSingleSubmit = (e: React.FormEvent) => {
@@ -163,7 +163,6 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
     }
   };
 
-  // NEW: Convert file to Base64 directly without resizing to keep max quality
   const fileToBase64 = (file: File): Promise<string> => {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
@@ -177,9 +176,14 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
     const file = e.target.files?.[0];
     if (!file) return;
     
+    // Basic validation
+    if (file.size > 10 * 1024 * 1024) {
+      alert("Ảnh quá lớn (>10MB). Vui lòng chọn ảnh nhỏ hơn.");
+      return;
+    }
+
     setIsLoadingAI(true);
     try {
-      // Use original quality image
       const base64String = await fileToBase64(file);
       const mimeType = file.type || 'image/jpeg';
       const base64Data = base64String.split(',')[1];
@@ -188,12 +192,14 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
         const parsedSchedules = await geminiService.parseScheduleImage(base64Data, mimeType, aiInstruction);
         if (parsedSchedules.length > 0) {
           onUpdateSchedules([...user.schedules, ...parsedSchedules]);
-          alert(`AI đã thêm thành công ${parsedSchedules.length} môn học!`);
+          // Use a simple alert for now, but in a real app a toast is better
+          alert(`Thành công! AI đã tìm thấy ${parsedSchedules.length} môn học.`);
         } else {
-          alert('AI không tìm thấy lịch học. Hãy thử chụp lại ảnh rõ nét hơn hoặc nhập gợi ý lớp (VD: Lớp 12A1).');
+          alert('AI không tìm thấy lịch học. Hãy thử:\n1. Chụp ảnh rõ nét hơn\n2. Cắt bớt phần thừa\n3. Nhập gợi ý lớp (VD: 12A1)');
         }
       } catch (err: any) {
-        alert(`${err.message}`);
+        console.error("AI Error:", err);
+        alert(`Lỗi: ${err.message}`);
       } finally {
         setIsLoadingAI(false);
         if (fileInputRef.current) fileInputRef.current.value = '';
@@ -201,7 +207,7 @@ const Dashboard: React.FC<Props> = ({ user, onLogout, onUpdateSchedules }) => {
     } catch (error) {
       console.error(error);
       setIsLoadingAI(false);
-      alert("Lỗi khi xử lý ảnh. Vui lòng chọn ảnh khác.");
+      alert("Lỗi khi xử lý file ảnh. Vui lòng thử lại.");
     }
   };
 

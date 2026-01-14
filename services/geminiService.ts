@@ -1,111 +1,88 @@
-import { GoogleGenAI } from "@google/genai";
+import { GoogleGenAI, Type, Schema } from "@google/genai";
 import { Schedule } from "../types";
 
-const API_KEY = "AIzaSyDN_oDmYkgNkTuDiko53xD3lZEQW10zGuc";
-
-const delay = (ms: number) => new Promise(res => setTimeout(res, ms));
-
 const parseScheduleImage = async (base64Image: string, mimeType: string, userInstruction: string): Promise<Schedule[]> => {
-  const ai = new GoogleGenAI({ apiKey: API_KEY });
-  // Dùng bản 1.5 Pro hoặc 2.0 Flash Exp đều được, nhưng 1.5 Pro ổn định hơn với Text tiếng Việt dài
-  const modelId = 'gemini-1.5-pro-latest'; 
+  const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+  const modelId = 'gemini-2.0-flash-exp';
 
+  // Prompt được tinh chỉnh đặc biệt cho loại bảng trong ảnh
   const prompt = `
-    Bạn là một học sinh Việt Nam đang xem ảnh Thời Khóa Biểu.
-    Nhiệm vụ: Trích xuất lịch học từ ảnh này thành dữ liệu JSON.
+    Analyze this Vietnamese School Timetable image.
 
-    1. MỤC TIÊU:
-       - Tìm lịch của lớp: "${userInstruction}".
-       - Nếu không tìm thấy tên lớp này (hoặc người dùng không nhập), hãy lấy lịch của LỚP ĐẦU TIÊN hoặc CỘT CÓ NHIỀU CHỮ NHẤT.
+    STRUCTURE OF THE IMAGE:
+    - Column 1: "Thứ" (Day) - Merged cells spanning multiple rows (e.g., "2", "3", "4"... means Monday, Tuesday...).
+    - Column 2: "Buổi" (Session) - "S" (Morning), "C" (Afternoon).
+    - Column 3: "Tiết" (Period) - 1, 2, 3, 4, 5.
+    - Column 4: "TG" (Time) - Format like "7g10" (07:10), "12g30" (12:30).
+    - Next Columns: Class Names (e.g., 12E1, 12E2, 12A1...).
 
-    2. QUY TẮC ĐỌC:
-       - Đọc từng dòng. Nếu thấy tên môn học (Toán, Lý, Hóa, SHCN, Chào cờ...), hãy ghi lại.
-       - Cột "Thứ" (Thứ 2, Thứ 3...) thường nằm bên trái cùng. Nếu ô Thứ bị gộp (merged), hãy tự hiểu là Thứ đó áp dụng cho các tiết bên dưới.
-       - Cột "Tiết" (1, 2, 3, 4, 5).
+    USER REQUEST: "${userInstruction || 'Find the column for class 12A1'}"
 
-    3. QUY TẮC GIỜ (QUAN TRỌNG - TỰ ĐỘNG ĐIỀN NẾU KHÔNG THẤY GIỜ):
-       Nếu trên ảnh không ghi rõ giờ (7h00...), hãy dùng chuẩn sau:
-       - Sáng Tiết 1: 07:00 - 07:45
-       - Sáng Tiết 2: 07:50 - 08:35
-       - Sáng Tiết 3: 08:45 - 09:30
-       - Sáng Tiết 4: 09:40 - 10:25
-       - Sáng Tiết 5: 10:30 - 11:15
-       - Chiều Tiết 1: 12:45 - 13:30
-       - Chiều Tiết 2: 13:35 - 14:20
-       - Chiều Tiết 3: 14:25 - 15:10
-       - Chiều Tiết 4: 15:20 - 16:05
-
-    4. OUTPUT FORMAT (JSON ONLY):
-       Trả về MỘT mảng JSON duy nhất. Không giải thích, không Markdown.
-       [
-         { "subject": "Toán", "day": "Thứ 2", "startTime": "07:00", "endTime": "07:45" },
-         { "subject": "Văn", "day": "Thứ 2", "startTime": "07:50", "endTime": "08:35" }
-       ]
+    TASK:
+    1. LOCATE THE COLUMN: Find the column header that matches the User Request. If not found/empty, pick the column "12A1" or the right-most class column.
+    2. ITERATE ROWS: Go down the selected column.
+    3. EXTRACT:
+       - Subject: Text in the class column (e.g., "Toán-Nhơn", "Lý-D.Thúy"). Ignore empty cells.
+       - Day: Look at Column 1. If merged/empty, use the value from the rows above. (Map: "2"->Thứ 2, "3"->Thứ 3...).
+       - Time: Look at Column "TG". Convert "7g10" -> "07:10". Calculate End Time by adding 45 minutes to Start Time.
+    
+    CRITICAL RULES:
+    - If "TG" column is readable, USE IT. Example: "7g10" -> "07:10".
+    - If "TG" is unreadable, fallback to standard times:
+      (S) Morning: P1=07:00, P2=07:50, P3=08:45, P4=09:35, P5=10:25.
+      (C) Afternoon: P1=12:30, P2=13:15, P3=14:00, P4=14:45, P5=15:30.
+    
+    OUTPUT: JSON Array only.
   `;
 
-  let attempts = 0;
-  while (attempts < 3) {
-    try {
-      const response = await ai.models.generateContent({
-        model: modelId,
-        contents: {
-          parts: [
-            { inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Image } },
-            { text: prompt }
-          ]
-        },
-        config: {
-          temperature: 0.2, // Thấp để chính xác
-        }
-      });
+  const responseSchema: Schema = {
+    type: Type.ARRAY,
+    items: {
+      type: Type.OBJECT,
+      properties: {
+        subject: { type: Type.STRING },
+        day: { type: Type.STRING },
+        startTime: { type: Type.STRING },
+        endTime: { type: Type.STRING },
+      },
+      required: ["subject", "day", "startTime", "endTime"],
+    },
+  };
 
-      if (response.text) {
-        let cleanText = response.text.trim();
-        
-        // Cố gắng lọc lấy phần JSON giữa dấu ngoặc vuông []
-        const firstBracket = cleanText.indexOf('[');
-        const lastBracket = cleanText.lastIndexOf(']');
-        
-        if (firstBracket !== -1 && lastBracket !== -1) {
-            cleanText = cleanText.substring(firstBracket, lastBracket + 1);
-        } else {
-             // Fallback: Xóa các ký tự markdown nếu không tìm thấy [] chuẩn
-             cleanText = cleanText.replace(/```json/g, '').replace(/```/g, '');
-        }
-
-        try {
-            const parsed = JSON.parse(cleanText);
-            
-            if (Array.isArray(parsed) && parsed.length > 0) {
-                 return parsed.map((item: any) => ({
-                    id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
-                    subject: item.subject || "Môn không tên",
-                    day: item.day || "Thứ 2",
-                    startTime: item.startTime || "07:00",
-                    endTime: item.endTime || "07:45"
-                 }));
-            }
-        } catch (jsonError) {
-            console.error("JSON Parse Error (Raw Text):", response.text);
-        }
+  try {
+    const response = await ai.models.generateContent({
+      model: modelId,
+      contents: {
+        parts: [
+          { inlineData: { mimeType: mimeType || 'image/jpeg', data: base64Image } },
+          { text: prompt }
+        ]
+      },
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: responseSchema,
+        temperature: 0.1,
       }
-      
-      // Nếu không parse được hoặc text rỗng
-      throw new Error("AI response invalid");
+    });
 
-    } catch (error: any) {
-      console.error(`Attempt ${attempts + 1} Error:`, error);
-      attempts++;
-      
-      if (error.message?.includes('503') || error.message?.includes('429')) {
-        await delay(2000); 
-        continue;
+    if (response.text) {
+      const parsed = JSON.parse(response.text);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.map((item: any) => ({
+          id: Date.now().toString() + Math.random().toString(36).substr(2, 9),
+          subject: item.subject,
+          day: item.day,
+          startTime: item.startTime,
+          endTime: item.endTime
+        }));
       }
     }
-  }
+    throw new Error("Empty response");
 
-  // Nếu sau 3 lần vẫn lỗi, ném lỗi ra ngoài để UI hiển thị
-  throw new Error("Không thể nhận dạng môn học nào. Vui lòng chụp ảnh rõ nét hơn hoặc cắt bớt các phần thừa.");
+  } catch (error: any) {
+    console.error("Gemini AI Error:", error);
+    throw new Error("Không đọc được ảnh. Vui lòng nhập tên lớp (VD: 12A1) vào ô yêu cầu để AI biết cột nào.");
+  }
 };
 
 export const geminiService = {
