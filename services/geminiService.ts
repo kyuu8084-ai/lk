@@ -1,15 +1,16 @@
 import { GoogleGenAI, Type } from "@google/genai";
 import { Schedule } from "../types";
 
-// Đã điền API Key trực tiếp vào đây
+// --- CẤU HÌNH API KEY TẠI ĐÂY ---
 const API_KEY = "AIzaSyDN_oDmYkgNkTuDiko53xD3lZEQW10zGuc";
 
 const parseScheduleImage = async (base64Image: string, userInstruction: string): Promise<Schedule[]> => {
-  // Kiểm tra cơ bản xem biến API_KEY có giá trị không (đề phòng trường hợp bạn xóa nhầm)
+  // Kiểm tra xem biến API_KEY có giá trị không
   if (!API_KEY) {
     throw new Error("Missing API Key");
   }
 
+  // Khởi tạo GoogleGenAI với key trực tiếp
   const ai = new GoogleGenAI({ apiKey: API_KEY });
 
   const prompt = `
